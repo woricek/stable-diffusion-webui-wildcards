@@ -1,5 +1,4 @@
 import os
-import random
 import sys
 
 from modules import scripts, script_callbacks, shared
@@ -15,7 +14,7 @@ class WildcardsScript(scripts.Script):
     def show(self, is_img2img):
         return scripts.AlwaysVisible
 
-    def replace_wildcard(self, text, gen):
+    def replace_wildcard(self, text, iteration):
         if " " in text or len(text) == 0:
             return text
 
@@ -24,7 +23,8 @@ class WildcardsScript(scripts.Script):
         replacement_file = os.path.join(wildcards_dir, f"{text}.txt")
         if os.path.exists(replacement_file):
             with open(replacement_file, encoding="utf8") as f:
-                return gen.choice(f.read().splitlines())
+                lines = f.read().splitlines()
+                return lines[iteration % len(lines)]
         else:
             if replacement_file not in warned_about_files:
                 print(f"File {replacement_file} not found for the __{text}__ wildcard.", file=sys.stderr)
@@ -32,20 +32,17 @@ class WildcardsScript(scripts.Script):
 
         return text
 
-    def replace_prompts(self, prompts, seeds):
+    def replace_prompts(self, prompts, iteration):
         res = []
 
         for i, text in enumerate(prompts):
-            gen = random.Random()
-            gen.seed(seeds[0 if shared.opts.wildcards_same_seed else i])
-
-            res.append("".join(self.replace_wildcard(chunk, gen) for chunk in text.split("__")))
+            res.append("".join(self.replace_wildcard(chunk, iteration) for chunk in text.split("__")))
 
         return res
 
     def apply_wildcards(self, p, attr, infotext_suffix, infotext_compare=None):
         if all_original_prompts := getattr(p, attr, None):
-            setattr(p, attr, self.replace_prompts(all_original_prompts, p.all_seeds))
+            setattr(p, attr, self.replace_prompts(all_original_prompts, p.iteration))
             if (shared.opts.wildcards_write_infotext and all_original_prompts[0] != getattr(p, attr)[0] and
                     (not infotext_compare or p.extra_generation_params.get(f"Wildcard {infotext_compare}", None) != all_original_prompts[0])):
                 p.extra_generation_params[f"Wildcard {infotext_suffix}"] = all_original_prompts[0]
@@ -59,7 +56,6 @@ class WildcardsScript(scripts.Script):
 
 
 def on_ui_settings():
-    shared.opts.add_option("wildcards_same_seed", shared.OptionInfo(False, "Use same seed for all images", section=("wildcards", "Wildcards")))
     shared.opts.add_option("wildcards_write_infotext", shared.OptionInfo(True, "Write original prompt to infotext", section=("wildcards", "Wildcards")).info("the original prompt before __wildcards__ are applied"))
 
 
